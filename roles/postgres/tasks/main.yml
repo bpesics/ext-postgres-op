@@ -1,0 +1,148 @@
+- name: create yaml anchor with server credentials
+  set_fact:
+    pg_server_login: &pg_server_login
+      login_host: '{{ pg_server_login_host }}'
+      port: '{{ pg_server_login_port }}'
+      login_user: '{{ pg_server_login_user }}'
+      login_password: '{{ pg_server_login_password }}'
+  when: not true
+
+- name: check mandatory variables
+  assert:
+    that:
+      - database_name is defined
+
+- name: replace hyphens with underscores
+  set_fact:
+    _database_name: '{{ database_name | regex_replace("-","_") }}'
+
+- name: create db
+  community.postgresql.postgresql_db:
+    <<: *pg_server_login
+    name: '{{ _database_name }}'
+- name: add extensions
+  community.postgresql.postgresql_ext:
+    <<: *pg_server_login
+    name: '{{ item }}'
+    db: '{{ _database_name }}'
+    schema: '{{ schema_name }}'
+    cascade: true
+  loop: '{{ extensions }}'
+# https://www.postgresql.org/docs/12/ddl-schemas.html#DDL-SCHEMAS-PRIV
+# don't let everybody create objects in our public schema...
+- name: revoke ALL privleges from PUBLIC on the public schema
+  community.postgresql.postgresql_privs:
+    <<: *pg_server_login
+    db: '{{ _database_name }}'
+    state: absent
+    privs: ALL
+    objs: public
+    type: schema
+    roles: PUBLIC
+  changed_when: False # https://github.com/ansible-collections/community.postgresql/issues/44
+# don't let everybody create a schema in our db...
+- name: revoke CREATE privleges from PUBLIC on db
+  community.postgresql.postgresql_privs:
+    <<: *pg_server_login
+    db: '{{ _database_name }}'
+    state: absent
+    privs: CREATE
+    objs: '{{ _database_name }}'
+    type: database
+    roles: PUBLIC
+  changed_when: False
+
+- name: create rw role
+  community.postgresql.postgresql_user:
+    <<: *pg_server_login
+    db: '{{ _database_name }}'
+    name: '{{ database_rw_role }}'
+    role_attr_flags: NOLOGIN
+    no_password_changes: yes
+- name: grant privileges on db to rw
+  community.postgresql.postgresql_privs:
+    <<: *pg_server_login
+    db: '{{ _database_name }}'
+    privs: CONNECT,TEMPORARY,CREATE
+    objs: '{{ _database_name }}'
+    type: database
+    roles: '{{ database_rw_role }}'
+- name: grant privleges on schema to rw
+  community.postgresql.postgresql_privs:
+    <<: *pg_server_login
+    db: '{{ _database_name }}'
+    privs: USAGE,CREATE
+    objs: '{{ schema_name }}'
+    type: schema
+    roles: '{{ database_rw_role }}'
+- name: grant ALL privileges on all tables in schema to rw
+  community.postgresql.postgresql_privs:
+    <<: *pg_server_login
+    db: '{{ _database_name }}'
+    privs: ALL
+    objs: ALL_IN_SCHEMA
+    type: table
+    schema: '{{ schema_name }}'
+    roles: '{{ database_rw_role }}'
+- name: set default privileges on tables in schema to rw
+  community.postgresql.postgresql_privs:
+    <<: *pg_server_login
+    db: '{{ _database_name }}'
+    privs: ALL
+    objs: TABLES
+    type: default_privs
+    schema: '{{ schema_name }}'
+    roles: '{{ database_rw_role }}'
+- name: grant privileges on all sequences in schema to rw
+  community.postgresql.postgresql_privs:
+    <<: *pg_server_login
+    db: '{{ _database_name }}'
+    privs: USAGE
+    objs: ALL_IN_SCHEMA
+    type: sequence
+    schema: '{{ schema_name }}'
+    roles: '{{ database_rw_role }}'
+- name: set default privileges on sequences in schema to rw
+  community.postgresql.postgresql_privs:
+    <<: *pg_server_login
+    db: '{{ _database_name }}'
+    privs: USAGE
+    objs: SEQUENCES
+    type: default_privs
+    schema: '{{ schema_name }}'
+    roles: '{{ database_rw_role }}'
+
+- name: create ro role
+  community.postgresql.postgresql_user:
+    <<: *pg_server_login
+    db: '{{ _database_name }}'
+    name: '{{ database_ro_role }}'
+    role_attr_flags: NOLOGIN
+    no_password_changes: yes
+    priv: CONNECT
+- name: grant privileges on schema to ro role
+  community.postgresql.postgresql_privs:
+    <<: *pg_server_login
+    db: '{{ _database_name }}'
+    privs: USAGE
+    objs: '{{ schema_name }}'
+    type: schema
+    roles: '{{ database_ro_role }}'
+- name: grant privileges on all tables to ro role
+  community.postgresql.postgresql_privs:
+    <<: *pg_server_login
+    db: '{{ _database_name }}'
+    privs: SELECT
+    objs: ALL_IN_SCHEMA
+    type: table
+    schema: '{{ schema_name }}'
+    roles: '{{ database_ro_role }}'
+- name: set default privileges on schema to ro role
+  community.postgresql.postgresql_privs:
+    <<: *pg_server_login
+    db: '{{ _database_name }}'
+    privs: SELECT
+    objs: TABLES
+    type: default_privs
+    schema: '{{ schema_name }}'
+    roles: '{{ database_ro_role }}'

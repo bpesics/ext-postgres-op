@@ -1,0 +1,13 @@
+pg_server_login_host: "{{ lookup('env', 'PG_SERVER_LOGIN_HOST') | default('localhost', True) }}"
+pg_server_login_port: "{{ lookup('env', 'PG_SERVER_LOGIN_PORT') | default('5432', True) }}"
+pg_server_login_user: "{{ lookup('env', 'PG_SERVER_LOGIN_USER') | default('postgres', True) }}"
+pg_server_login_password: "{{ lookup('env', 'PG_SERVER_LOGIN_PASSWORD') | default('postgres', True) }}"
+pg_server_default_db: "{{ lookup('env', 'PG_SERVER_DEFAULT_DB') | default('postgres', True) }}"
+
+schema_name: 'public'
+database_rw_role: '{{ _database_name }}_r_rw'
+database_ro_role: '{{ _database_name }}_r_ro'
+database_user_name: '{{ _database_name }}'
+
+secret_name: '{{ secret_name_prefix }}{{ database_user_name | regex_replace("_","-") }}'
+k8s_namespace: '{{ ansible_operator_meta.namespace }}'

@@ -1,0 +1,74 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: manager-role
+rules:
+  ##
+  ## Base operator rules
+  ##
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+      - pods
+      - pods/exec
+      - pods/log
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - apps
+    resources:
+      - deployments
+      - daemonsets
+      - replicasets
+      - statefulsets
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  ##
+  ## Rules for db.zmrzlina.hu/v1alpha1, Kind: Postgres
+  ##
+  - apiGroups:
+      - db.zmrzlina.hu
+    resources:
+      - postgres
+      - postgres/status
+      - postgres/finalizers
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  ##
+  ## Rules for db.zmrzlina.hu/v1alpha1, Kind: PostgresUser
+  ##
+  - apiGroups:
+      - db.zmrzlina.hu
+    resources:
+      - postgresusers
+      - postgresusers/status
+      - postgresusers/finalizers
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+#+kubebuilder:scaffold:rules

@@ -1,0 +1,105 @@
+- name: create yaml anchor with server credentials
+  set_fact:
+    pg_server_login: &pg_server_login
+      login_host: '{{ pg_server_login_host }}'
+      port: '{{ pg_server_login_port }}'
+      login_user: '{{ pg_server_login_user }}'
+      login_password: '{{ pg_server_login_password }}'
+  when: not true
+
+- name: check mandatory variables
+  assert:
+    that:
+      - database_name is defined
+      - secret_name_prefix is defined
+
+- name: replace hyphens with underscores in database name
+  set_fact:
+    _database_name: '{{ database_name | regex_replace("-","_") }}'
+
+- name: replace hyphens with underscores in database user name
+  set_fact:
+    _database_user_name: '{{ database_user_name | regex_replace("-","_") }}'
+
+- name: retrieve credentials secret
+  k8s_info:
+    api: v1
+    kind: Secret
+    name: '{{ secret_name }}'
+    namespace: '{{ k8s_namespace }}'
+  register: credentials_secret
+
+- name: use password from secret if available
+  set_fact:
+    database_user_password: '{{ credentials_secret.resources[0].data.PASSWORD | b64decode }}'
+    password_change: no
+  when: credentials_secret.resources[0].data.PASSWORD is defined
+
+- name: generate random password if necessary
+  set_fact:
+    database_user_password: "{{ lookup('password', '/dev/null chars=ascii_lowercase,digits length=32') }}"
+    password_change: yes
+  when: credentials_secret.resources[0].data.PASSWORD is not defined
+
+- name: assemble DB URI
+  set_fact:
+    POSTGRES_URL: 'postgresql://{{ _database_user_name }}:{{ database_user_password }}@{{ pg_server_login_host }}:{{ pg_server_login_port }}/{{ _database_name }}'
+
+- name: create secret with credentials
+  community.kubernetes.k8s:
+    state: present
+    merge_type: json
+    definition: 
+      apiVersion: v1
+      kind: Secret
+      type: Opaque             
+      metadata:
+        name: '{{ secret_name }}'
+        namespace: '{{ k8s_namespace }}'
+      data:
+        DATABASE_NAME: '{{ _database_name | b64encode }}'
+        HOST: '{{ pg_server_login_host | b64encode }}'
+        LOGIN: '{{ _database_user_name | b64encode }}'
+        PASSWORD: '{{ database_user_password | b64encode }}'
+        POSTGRES_URL: '{{ POSTGRES_URL | b64encode }}'
+
+- name: select roles
+  set_fact:
+    database_user_roles: ['{{ database_rw_role }}']
+  when: privileges == "RW"
+
+- name: select roles
+  set_fact:
+    database_user_roles: ['{{ database_ro_role }}']
+  when: privileges == "RO"
+
+- name: create user
+  community.postgresql.postgresql_user:
+    <<: *pg_server_login
+    db: '{{ pg_server_default_db }}'
+    name: '{{ _database_user_name }}'
+    password: '{{ database_user_password }}'
+    # as password is provided in clear text the module would create a new hash each time
+    # therefore prevent rehashing (and an unnecessary secret change) by only allowing password update when it really changes
+    no_password_changes: '{{ not password_change | bool }}'
+    groups: '{{ database_user_roles }}'
+
+# required to be able to execute the next ALTER DEFAULT PRIVILEGES FOR ROLE command
+- name: add current user to rw role
+  community.postgresql.postgresql_query:
+    <<: *pg_server_login
+    db: '{{ _database_name }}'
+    query: GRANT {{ _database_user_name }} to current_user
+  when: privileges == "RW"
+  changed_when: False
+
+- name: set default privileges on tables to ro by rw
+  community.postgresql.postgresql_privs:
+    <<: *pg_server_login
+    db: '{{ _database_name }}'
+    privs: SELECT
+    objs: TABLES
+    type: default_privs
+    roles: '{{ database_ro_role }}'
+    target_roles: '{{ _database_user_name }}'
+  when: privileges == "RW"

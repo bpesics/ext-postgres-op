@@ -1,0 +1,23 @@
+domain: zmrzlina.hu
+layout:
+- ansible.sdk.operatorframework.io/v1
+plugins:
+  manifests.sdk.operatorframework.io/v2: {}
+  scorecard.sdk.operatorframework.io/v2: {}
+projectName: ext-postgres-op
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  domain: zmrzlina.hu
+  group: db
+  kind: Postgres
+  version: v1alpha1
+- api:
+    crdVersion: v1
+    namespaced: true
+  domain: zmrzlina.hu
+  group: db
+  kind: PostgresUser
+  version: v1alpha1
+version: "3"

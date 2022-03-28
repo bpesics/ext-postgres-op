@@ -1,0 +1,7 @@
+apiVersion: db.zmrzlina.hu/v1alpha1
+kind: Postgres
+metadata:
+  name: postgres-sample
+spec:
+  # Add fields here
+  foo: bar
